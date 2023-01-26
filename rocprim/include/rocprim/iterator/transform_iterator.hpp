@@ -33,6 +33,29 @@
 
 BEGIN_ROCPRIM_NAMESPACE
 
+template <typename ITType, typename T>
+struct LoadImpl {
+  ROCPRIM_HOST_DEVICE static T apply(ITType src) {
+    return *src;
+  }
+};
+
+template <typename ITType>
+struct LoadImpl<ITType, bool> {
+  ROCPRIM_HOST_DEVICE static bool apply(ITType src) {
+    static_assert(sizeof(bool) == sizeof(char), "");
+    // Protect against invalid boolean values by loading as a byte
+    // first, then converting to bool (see gh-54789).
+    return *reinterpret_cast<const unsigned char*>(src);
+  }
+};
+
+
+template <typename ITType, typename T>
+ROCPRIM_HOST_DEVICE T load(ITType src) {
+  return LoadImpl<ITType, T>::apply(src);
+}
+
 /// \class transform_iterator
 /// \brief A random-access input (read-only) iterator adaptor for transforming dereferenced values.
 ///
@@ -72,6 +95,8 @@ public:
     using iterator_category = std::random_access_iterator_tag;
     /// The type of unary function used to transform input range.
     using unary_function = UnaryFunction;
+
+    using deref_type = typename std::iterator_traits<InputIterator>::value_type;
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
     using self_type = transform_iterator;
@@ -125,7 +150,7 @@ public:
     ROCPRIM_HOST_DEVICE inline
     value_type operator*() const
     {
-        return transform_(*iterator_);
+        return transform_(load<InputIterator,deref_type>(iterator_));
     }
 
     ROCPRIM_HOST_DEVICE inline
